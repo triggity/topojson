@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+body {
+  background: #fcfcfa;
+}
+
+.stroke {
+  fill: none;
+  stroke: #000;
+  stroke-width: 3px;
+}
+
+.fill {
+  fill: #fff;
+}
+
+.graticule {
+  fill: none;
+  stroke: #777;
+  stroke-width: .5px;
+  stroke-opacity: .5;
+}
+
+.land {
+  fill: #222;
+}
+
+.boundary {
+  fill: none;
+  stroke: #fff;
+  stroke-width: .5px;
+}
+
+</style>
+<body>
+<script src="underscore.js"></script>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://d3js.org/d3.geo.projection.v0.min.js"></script>
+<script src="http://d3js.org/topojson.v1.min.js"></script>
+<script>
+
+var width = 960,
+    height = 580;
+
+var color = d3.scale.category10();
+var fillcolor = '#ABDDA4';
+
+var projection = d3.geo.mercator()
+    .scale(170)
+    .translate([width / 2, height / 2])
+    .precision(.1);
+
+var path = d3.geo.path()
+    .projection(projection);
+
+var graticule = d3.geo.graticule();
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+
+svg.append("defs").append("path")
+    .datum({type: "Sphere"})
+    .attr("id", "sphere")
+    .attr("d", path);
+
+svg.append("use")
+    .attr("class", "stroke")
+    .attr("xlink:href", "#sphere");
+
+svg.append("use")
+    .attr("class", "fill")
+    .attr("xlink:href", "#sphere");
+
+svg.append("path")
+    .datum(graticule)
+    .attr("class", "graticule")
+    //.attr("d", path);
+
+var g = svg.append('g')
+function createURL(base, attr) {
+  var queryparams = _.map(attr, function(val, key) {
+    return encodeURIComponent(key) + "=" + encodeURIComponent(val);
+  });
+
+  return base + "?" + queryparams.join("&")
+}
+function addPoint(lat,lon,text, nodeNum) {
+
+  var gpoint = g.append("g").attr("class", "gpoint");
+  var x = projection([lat,lon])[0];
+  var y = projection([lat,lon])[1];
+
+  gpoint.append("svg:circle")
+    .attr("cx", x)
+    .attr("cy", y)
+    .attr("class","point")
+    //.attr("r", 1.5);
+    .attr("r", function(d) {
+      console.log(Math.sqrt(parseInt(nodeNum)));
+      return Math.sqrt(parseInt(nodeNum));
+    })
+
+  //conditional in case a point has no associated text
+  //if(text.length>0){
+
+  //  gpoint.append("text")
+  //    .attr("x", x+2)
+  //    .attr("y", y+2)
+  //    .attr("class","text")
+  //    .text(text);
+  //}
+
+}
+function fillColos() {
+  var urlBase = "https://maps.googleapis.com/maps/api/geocode/json";
+  var apikey = 'AIzaSyBsu-u1A82ZNtuQdEPjARRQlJoSYpqoDXo';
+  d3.json("colos.json", function(error, data) {
+    var colos = convertToPop(data);
+    var flag;
+    console.log(colos);
+    _.each(colos, function(colo) {
+      var attrs = {
+	address: colo.location,
+	key: apikey
+      }
+      d3.json(createURL(urlBase, attrs), function(err, data) {
+	var geo = data.results[0].geometry.location
+	addPoint(geo.lng, geo.lat, data.results[0]['formatted_address'], colo.nodes.length)
+	console.log('gotta colo info', arguments);
+      });
+    });
+  });
+  //d3.json("https://maps.googleapis.com/maps/api/geocode/json?address=1600+Amphitheatre+Parkway,+Mountain+View,+CA&key=" + apikey, function(error, data) {
+  //    console.log(arguments);
+  //});
+
+}
+// convert to pop by location info
+function convertToPop(data) {
+  // strip stuff from json format
+  var parsed = data.response.data.obj.colos;
+
+  // get colos by stripping in front of 'm' in '4m1'
+  // colos dict's will be in form of
+  //  ord #   :   [nodes]
+  var colos = _.groupBy(parsed, function(i) {
+    return i.nodeName.split('m')[0]
+  });
+
+  /*
+
+    fills out the colos better giving each key a structure of
+    [
+      ord#  : {
+	nodes: [nodes]
+	location : 'San Jose, CA'
+	ordNum: ord#
+      }
+    ]
+    */
+  colos = _.map(colos, function(data, num) {
+      var loc = data[0].location;
+      loc = loc.split(' [')[0]
+      return {
+	nodes: data,
+	location: loc,
+	ordNum: num
+      }
+  });
+  return colos;
+
+}
+d3.json("examples/world-110m.json", function(error, world) {
+  var countries = topojson.feature(world, world.objects.countries).features,
+      neighbors = topojson.neighbors(world.objects.countries.geometries);
+
+      console.log(world);
+      console.log(world.objects.countries);
+  svg.selectAll(".country")
+      .data(countries)
+    .enter().insert("path", ".graticule")
+      .attr("class", "country")
+      .attr("d", path)
+      .style("fill", fillcolor);
+      //.style("fill", function(d, i) { return color(d.color = d3.max(neighbors[i], function(n) { return countries[n].color; }) + 1 | 0); });
+
+  svg.insert("path", ".graticule")
+      .datum(topojson.mesh(world, world.objects.countries, function(a, b) { return a !== b; }))
+      .attr("class", "boundary")
+      .attr("d", path);
+      //fillColos();
+});
+
+d3.select(self.frameElement).style("height", height + "px");
+
+</script>
